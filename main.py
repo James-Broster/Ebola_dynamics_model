@@ -2,8 +2,9 @@ from data.load_parameters import load_parameters
 from data.data_preparation import prepare_data
 from scripts.parameter_estimation import estimate_parameters
 from scripts.run_models import run_model
-from utils.plotting import plot_with_confidence_and_threshold, plot_raw_data_log
+from utils.plotting import save_plot_with_confidence_and_threshold, save_plot_raw_data_log
 import numpy as np
+from pathlib import Path
 
 def main():
     parameters = load_parameters()
@@ -20,8 +21,8 @@ def main():
     print(f"Initial time values: {time}")
     print(f"Initial virusload values: {virusload}")
 
-    # Plot log10 of raw data
-    plot_raw_data_log(time, virusload)
+    # Plot log10 of raw data and save
+    save_plot_raw_data_log(time, virusload, Path('plots/raw_data_log.png'))
 
     initial_params = parameters['initial_parameters']
     bounds = parameters['bounds']
@@ -49,8 +50,11 @@ def main():
 
     print(f"Simulated virusload: {median_simulation[:5]}")  # Print first few values
 
-    # Plot with confidence intervals and threshold
-    plot_with_confidence_and_threshold(time, virusload, median_simulation, lower_bound, upper_bound, extended_time, chains, threshold=1e4, isolation_day=21)
+    # Plot with confidence intervals and threshold and save
+    save_plot_with_confidence_and_threshold(
+        time, virusload, median_simulation, lower_bound, upper_bound, extended_time, 
+        chains, threshold=1e4, isolation_day=21, save_path=Path('plots/model_with_confidence_and_threshold.png')
+    )
 
 if __name__ == "__main__":
     main()

@@ -1,16 +1,18 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pints.plot
+from pathlib import Path
 
-def plot_raw_data_log(time, virusload):
+def save_plot_raw_data_log(time, virusload, save_path):
     plt.figure()
     plt.plot(time, np.log10(virusload), 'o', label='Data')
     plt.xlabel('Time')
     plt.ylabel('Log10 Virus Load')
     plt.legend()
-    plt.show()
+    plt.savefig(save_path)
+    plt.close()
 
-def plot_with_confidence_and_threshold(time, virusload, median_simulation, lower_bound, upper_bound, extended_time, chains, threshold, isolation_day):
+def save_plot_with_confidence_and_threshold(time, virusload, median_simulation, lower_bound, upper_bound, extended_time, chains, threshold, isolation_day, save_path):
     plt.figure()
     plt.plot(time, np.log10(virusload), 'o', label='Data')
     plt.plot(extended_time, np.log10(median_simulation), '-', label='Model Median')
@@ -21,7 +23,9 @@ def plot_with_confidence_and_threshold(time, virusload, median_simulation, lower
     plt.ylabel('Log10 Virus Load')
     plt.legend()
     plt.ylim(bottom=0)  # Start y-axis at 0
-    plt.show()
+    plt.savefig(save_path)
+    plt.close()
 
     pints.plot.trace(chains)
-    plt.show()
+    plt.savefig(Path(save_path).parent / 'mcmc_trace.png')
+    plt.close()
