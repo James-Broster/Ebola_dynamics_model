@@ -1,54 +1,79 @@
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import odeint
+from scipy.optimize import least_squares
 
-# Provided data
-time = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0])
-virusload = np.array([32359.37, 15135612, 67608298, 229086765, 245470892, 398107171, 213796209, 186208714, 23988329, 630957.3, 4265795, 323593.7, 53703.18, np.nan, 141253.8])
+# Function to read the data
+def read_data(file_path):
+    data = pd.read_csv(file_path)
+    return data['time'].values, data['virusload'].values
 
-# Remove NaN values for plotting
-valid_idx = ~np.isnan(virusload)
-time = time[valid_idx]
-virusload = virusload[valid_idx]
-
-# Parameters from the provided model
-alpha_f = 1.57763931289105e-09
-delta_f = 1.50836617187542
-beta = 6.12783508806595e-07
-gamma = 1386.64900596809
-X0f = 0.00670143873431456
-V0f = 36504.3997450364
-
-# Initial conditions
-X_0 = X0f
-Y_0 = 1.0  # Assuming initial Y is 1
-V_0 = V0f
-y0 = [X_0, Y_0, V_0]
-
-# Print initial conditions and parameters
-print("Initial conditions:", y0)
-print("Parameters: alpha_f =", alpha_f, ", beta =", beta, ", delta_f =", delta_f, ", gamma =", gamma)
-
-# Differential equations model
-def model(y, t, alpha_f, beta, delta_f, gamma):
-    X, Y, V = y
-    dXdt = alpha_f * Y * V - beta * X * V
-    dYdt = -alpha_f * Y * V
-    dVdt = gamma * X * V - delta_f * V
+# ODE model
+def virus_model(y, t, alpha_f, beta, delta_f, gamma):
+    f1, f2, V = y
+    dXdt = alpha_f * f2 * V - beta * f1 * V
+    dYdt = -alpha_f * f2 * V
+    dVdt = gamma * f1 * V - delta_f * V
     return [dXdt, dYdt, dVdt]
 
-# Simulate the model using odeint
-simulated = odeint(model, y0, time, args=(alpha_f, beta, delta_f, gamma))
-simulated_virusload = simulated[:, 2]
+# Function to solve the ODE
+def solve_ode(parameters, initial_conditions, time):
+    alpha_f, beta, delta_f, gamma = parameters
+    return odeint(virus_model, initial_conditions, time, args=(alpha_f, beta, delta_f, gamma))
 
-# Print simulated values
-print("Simulated virus load:", simulated_virusload)
+# Residuals function for least squares
+def residuals(parameters, time, virusload):
+    initial_conditions = [0.0047, 0.9953, 3e4]  # f1(0), f2(0), V(0)
+    simulated_values = solve_ode(parameters, initial_conditions, time)
+    simulated_virusload = simulated_values[:, 2]
+    residuals = np.log10(virusload) - np.log10(simulated_virusload)
+    
+    # Handle non-finite residuals
+    if not np.all(np.isfinite(residuals)):
+        residuals = np.nan_to_num(residuals, nan=1e6, posinf=1e6, neginf=-1e6)
+    
+    return residuals
 
-# Plot data vs model
-plt.figure()
-plt.plot(time, virusload, 'o', label='Data')
-plt.plot(time, simulated_virusload, '-', label='Model')
-plt.xlabel('Time')
-plt.ylabel('Virus Load')
-plt.legend()
-plt.show()
+# Function to plot the results
+def plot_results(time, virusload, fitted_virusload, save_path):
+    plt.figure()
+    plt.plot(time, np.log10(virusload), 'o', label='Data')
+    plt.plot(time, np.log10(fitted_virusload), '-', label='Fitted Model')
+    plt.xlabel('Time')
+    plt.ylabel('Log10 Virus Load')
+    plt.legend()
+    plt.savefig(save_path)
+    plt.show()
+
+def main():
+    # File path to the data
+    file_path = '/Users/james/ebola_modelling/data/viral_load.csv'
+    
+    # Read the data
+    time, virusload = read_data(file_path)
+    
+    # Initial guess for parameters: alpha_f, beta, delta_f, gamma
+    initial_guess = [1e-9, 5e-7, 2.5, 2.5e3]  # Adjusted initial guess
+    
+    # Check initial residuals
+    initial_residuals = residuals(initial_guess, time, virusload)
+    print(f"Initial residuals: {initial_residuals}")
+    
+    # Perform least squares fitting
+    result = least_squares(residuals, initial_guess, args=(time, virusload), bounds=([1e-12, 1e-12, 0.1, 1], [1e-6, 1e-6, 10, 1e5]))
+    
+    # Get the fitted parameters
+    fitted_parameters = result.x
+    print(f"Fitted parameters: {fitted_parameters}")
+    
+    # Solve the ODE with the fitted parameters
+    initial_conditions = [0.0047, 0.9953, 3e4]  # f1(0), f2(0), V(0)
+    fitted_values = solve_ode(fitted_parameters, initial_conditions, time)
+    fitted_virusload = fitted_values[:, 2]
+    
+    # Plot the results
+    plot_results(time, virusload, fitted_virusload, 'fitted_viral_load.png')
+
+if __name__ == "__main__":
+    main()

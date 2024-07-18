@@ -1,10 +1,10 @@
 from scipy.integrate import odeint
 
 def virus_model(y, t, alpha_f, beta, delta_f, gamma):
-    X, Y, V = y
-    dXdt = alpha_f * Y * V - beta * X * V
-    dYdt = -alpha_f * Y * V
-    dVdt = gamma * X * V - delta_f * V
+    f1, f2, V = y
+    dXdt = alpha_f * f2 * V - beta * f1 * V
+    dYdt = -alpha_f * f2 * V
+    dVdt = gamma * f1 * V - delta_f * V
     return [dXdt, dYdt, dVdt]
 
 def solve_ode(parameters, initial_conditions, time):
