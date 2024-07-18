@@ -2,7 +2,7 @@ import pints
 import numpy as np
 from models.base_model import solve_ode
 
-def estimate_parameters(time, virusload, initial_parameters, bounds):
+def estimate_parameters(time, virusload, initial_parameters, bounds, therapy_params=None):
     class VirusModel(pints.ForwardModel):
         def n_parameters(self):
             return 7  # 4 parameters + 3 initial conditions
@@ -10,7 +10,7 @@ def estimate_parameters(time, virusload, initial_parameters, bounds):
         def simulate(self, parameters, times):
             alpha_f, beta, delta_f, gamma, f1_0, f2_0, V_0 = parameters
             y0 = [f1_0, f2_0, V_0]
-            result = solve_ode((alpha_f, beta, delta_f, gamma), y0, times)
+            result = solve_ode((alpha_f, beta, delta_f, gamma), y0, times, therapy_params)
             return result[:, 2]  # return the virus load (V)
 
     virus_model = VirusModel()
@@ -46,7 +46,7 @@ def estimate_parameters(time, virusload, initial_parameters, bounds):
     mcmc = pints.MCMCController(log_posterior, chains, [initial_params]*chains)
     
     # Set maximum iterations
-    mcmc.set_max_iterations(10000)  # Increase the number of iterations, e.g., to 100000
+    mcmc.set_max_iterations(10000)
     mcmc.set_log_to_screen(True)
     
     chains = mcmc.run()
