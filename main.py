@@ -9,8 +9,7 @@ from utils.plotting import save_plot_with_confidence_and_threshold, save_plot_ra
 import numpy as np
 from pathlib import Path
 
-def save_results(case_type, params_median, extended_time, median_simulation, lower_bound, upper_bound, f1_simulations, f2_simulations):
-    results_dir = Path(f'/Users/james/ebola_modelling/results/{case_type}')
+def save_results(results_dir, params_median, extended_time, median_simulation, lower_bound, upper_bound, f1_simulations, f2_simulations):
     results_dir.mkdir(parents=True, exist_ok=True)
 
     # Save the parameters to a CSV file
@@ -28,7 +27,7 @@ def save_results(case_type, params_median, extended_time, median_simulation, low
     })
     simulations_df.to_csv(results_dir / 'simulation_results.csv', index=False)
 
-def main(case_type):
+def main(case_type, therapy, therapy_params):
     dataset_file = 'viral_load.csv' if case_type == 'fatal' else 'non_fatal.csv'
     
     initial_params, bounds = load_parameters(case_type)
@@ -51,14 +50,16 @@ def main(case_type):
     print(f"Filtered time values: {time}")
     print(f"Filtered virusload values: {virusload}")
 
-    # Create results directory
-    results_dir = Path(f'/Users/james/ebola_modelling/results/{case_type}')
+    # Create results directory based on therapy flag
+    results_subdir = 'therapy' if therapy else 'no_therapy'
+    results_dir = Path(f'/Users/james/ebola_modelling/results/{case_type}/{results_subdir}')
     results_dir.mkdir(parents=True, exist_ok=True)
 
     # Plot log10 of raw data and save
-    raw_data_log_path = results_dir / f'raw_data_log_{case_type}.png'
-    save_plot_raw_data_log(time, virusload, raw_data_log_path)
+    raw_data_log_path = results_dir / 'raw_data_log.png'
+    save_plot_raw_data_log(time, virusload, raw_data_log_path, title=f'Log10 Virus Load - {case_type.capitalize()} - {"Therapy" if therapy else "No Therapy"}')
 
+    # Estimate parameters using MCMC without therapy
     chains = estimate_parameters(time, virusload, initial_params, bounds)
 
     samples = chains[:, 5000:, :].reshape(-1, 7)
@@ -68,8 +69,8 @@ def main(case_type):
 
     # Extend the time range to 26 days
     extended_time = np.arange(0, 27, 1)
-    
-    # Simulate for each sample to get the confidence intervals
+
+    # Simulate without therapy to get the baseline
     f1_simulations = []
     f2_simulations = []
     V_simulations = []
@@ -94,22 +95,39 @@ def main(case_type):
     f2_lower = np.percentile(f2_simulations, 2.5, axis=0)
     f2_upper = np.percentile(f2_simulations, 97.5, axis=0)
 
+    # If therapy is applied, simulate with therapy parameters
+    if therapy:
+        V_simulations_therapy = []
+        for sample in samples:
+            simulated = run_model(sample[:4], sample[4:], extended_time, therapy_params)  # apply therapy parameters
+            V_simulations_therapy.append(simulated[:, 2])
+        V_simulations_therapy = np.array(V_simulations_therapy)
+
+        median_simulation_therapy = np.median(V_simulations_therapy, axis=0)
+        lower_bound_therapy = np.percentile(V_simulations_therapy, 2.5, axis=0)
+        upper_bound_therapy = np.percentile(V_simulations_therapy, 97.5, axis=0)
+    else:
+        median_simulation_therapy = None
+        lower_bound_therapy = None
+        upper_bound_therapy = None
+
     print(f"Simulated virusload: {median_simulation[:5]}")  # Print first few values
 
     # Plot with confidence intervals and threshold and save
-    model_plot_path = results_dir / f'viral_load_{case_type}.png'
+    model_plot_path = results_dir / 'viral_load.png'
     save_plot_with_confidence_and_threshold(
         time, virusload, median_simulation, lower_bound, upper_bound, extended_time, 
-        chains, threshold=1e4, isolation_day=21, save_path=model_plot_path
+        chains, threshold=1e4, isolation_day=21, save_path=model_plot_path, title=f'Viral Load - {case_type.capitalize()} - {"Therapy" if therapy else "No Therapy"}',
+        therapy_data=(median_simulation_therapy, lower_bound_therapy, upper_bound_therapy) if therapy else None
     )
 
     # Plot f1 and f2 predictions and save
-    f1_plot_path = results_dir / f'f1_{case_type}.png'
-    f2_plot_path = results_dir / f'f2_{case_type}.png'
-    save_plot_f1_f2(extended_time, f1_median, f1_lower, f1_upper, f2_median, f2_lower, f2_upper, f1_plot_path, f2_plot_path)
+    f1_plot_path = results_dir / 'f1.png'
+    f2_plot_path = results_dir / 'f2.png'
+    save_plot_f1_f2(extended_time, f1_median, f1_lower, f1_upper, f2_median, f2_lower, f2_upper, f1_plot_path, f2_plot_path, title_prefix=f'{case_type.capitalize()} - {"Therapy" if therapy else "No Therapy"}')
 
     # Save results to CSV
-    save_results(case_type, params_median, extended_time, median_simulation, lower_bound, upper_bound, f1_simulations, f2_simulations)
+    save_results(results_dir, params_median, extended_time, median_simulation, lower_bound, upper_bound, f1_simulations, f2_simulations)
 
     # Find the day when the model reaches the threshold
     threshold = 1e4
@@ -127,9 +145,14 @@ def main(case_type):
         print("The model does not reach the threshold within the extended time period.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Run Ebola model simulation.')
+    parser = argparse.ArgumentParser(description='Run Ebola model simulation with therapy.')
     parser.add_argument('case_type', type=str, choices=['fatal', 'non_fatal'], help='Case type: fatal or non_fatal')
+    parser.add_argument('--therapy', action='store_true', help='Apply therapy or not')
+    parser.add_argument('--epsilon', type=float, default=0, help='Inhibition rate of therapy')
+    parser.add_argument('--t_star', type=float, default=0, help='Therapy initiation time (days post-symptom onset)')
     args = parser.parse_args()
 
     case_type = args.case_type
-    main(case_type)
+    therapy = args.therapy
+    therapy_params = (args.epsilon, args.t_star) if therapy else None
+    main(case_type, therapy, therapy_params)
